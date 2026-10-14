@@ -1,0 +1,6 @@
+{
+  "name": "5tar Employee Card Maker",
+  "description": "Create professional Employee ID Cards in minutes. Free, mobile-first, offline-capable PWA with 8+ templates, QR code, PNG/JPG/PDF download.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

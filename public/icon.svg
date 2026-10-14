@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e3a8a" />
+      <stop offset="50%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+    <linearGradient id="cardGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#f8fafc" />
+    </linearGradient>
+    <linearGradient id="starGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#f59e0b" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-opacity="0.35" flood-color="#0f172a" />
+    </filter>
+  </defs>
+
+  <!-- Background rounded squircle -->
+  <rect width="512" height="512" rx="112" fill="url(#bg)" />
+
+  <!-- ID Badge Body -->
+  <g filter="url(#shadow)">
+    <!-- ID Lanyard Clip Slot -->
+    <rect x="216" y="52" width="80" height="20" rx="10" fill="#0f172a" opacity="0.4" />
+    <rect x="220" y="56" width="72" height="12" rx="6" fill="#cbd5e1" />
+
+    <!-- Card Base -->
+    <rect x="116" y="90" width="280" height="360" rx="24" fill="url(#cardGrad)" stroke="#e2e8f0" stroke-width="2" />
+
+    <!-- Card Header Banner -->
+    <path d="M 116 114 A 24 24 0 0 1 140 90 L 372 90 A 24 24 0 0 1 396 114 L 396 170 L 116 170 Z" fill="#1e40af" />
+    
+    <!-- Mini 5-Star Crest on Header -->
+    <g transform="translate(196, 115) scale(0.6)">
+      <polygon points="100,10 40,198 190,78 10,78 160,198" fill="url(#starGrad)" />
+    </g>
+    <text x="256" y="152" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-weight="800" font-size="16" fill="#ffffff" letter-spacing="2">5TAR ID CARD</text>
+
+    <!-- Photo Frame -->
+    <rect x="196" y="196" width="120" height="120" rx="60" fill="#f1f5f9" stroke="#3b82f6" stroke-width="4" />
+    <!-- Avatar Icon in Photo Frame -->
+    <circle cx="256" cy="240" r="26" fill="#94a3b8" />
+    <path d="M 216 295 A 40 40 0 0 1 296 295 Z" fill="#94a3b8" />
+
+    <!-- Star Badge on Photo -->
+    <circle cx="298" cy="298" r="14" fill="#f59e0b" stroke="#ffffff" stroke-width="2" />
+    <polygon points="298,288 301,295 308,296 303,300 304,307 298,304 292,307 293,300 288,296 295,295" fill="#ffffff" />
+
+    <!-- Text Placeholders -->
+    <rect x="166" y="336" width="180" height="16" rx="8" fill="#1e293b" />
+    <rect x="196" y="362" width="120" height="10" rx="5" fill="#64748b" />
+
+    <!-- Mini Barcode / QR placeholder -->
+    <g transform="translate(176, 394)" fill="#334155">
+      <rect x="0" y="0" width="4" height="28" />
+      <rect x="8" y="0" width="8" height="28" />
+      <rect x="20" y="0" width="4" height="28" />
+      <rect x="28" y="0" width="12" height="28" />
+      <rect x="44" y="0" width="6" height="28" />
+      <rect x="54" y="0" width="4" height="28" />
+      <rect x="62" y="0" width="10" height="28" />
+      <rect x="76" y="0" width="4" height="28" />
+      <rect x="84" y="0" width="8" height="28" />
+      <rect x="96" y="0" width="14" height="28" />
+      <rect x="114" y="0" width="4" height="28" />
+      <rect x="122" y="0" width="10" height="28" />
+      <rect x="136" y="0" width="6" height="28" />
+      <rect x="146" y="0" width="8" height="28" />
+      <rect x="158" y="0" width="2" height="28" />
+    </g>
+  </g>
+</svg>
