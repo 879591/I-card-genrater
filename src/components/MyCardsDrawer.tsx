@@ -7,6 +7,12 @@ import {
   clearAllCardsFromIDB,
 } from '../utils/idb';
 import {
+  auth,
+  saveCardToFirestore,
+  getCardsFromFirestore,
+  deleteCardFromFirestore,
+} from '../lib/firebase';
+import {
   FolderArchive,
   Trash2,
   Copy,
@@ -14,9 +20,8 @@ import {
   X,
   AlertCircle,
   Plus,
-  Sparkles,
-  Calendar,
-  Building,
+  Cloud,
+  CheckCircle,
 } from 'lucide-react';
 
 interface MyCardsDrawerProps {
@@ -25,7 +30,6 @@ interface MyCardsDrawerProps {
   currentCard: CardData;
   onLoadCard: (card: CardData) => void;
   language: 'en' | 'hi';
-  onCardSavedNotice?: () => void;
 }
 
 export const MyCardsDrawer: React.FC<MyCardsDrawerProps> = ({
@@ -38,25 +42,62 @@ export const MyCardsDrawer: React.FC<MyCardsDrawerProps> = ({
   const [cards, setCards] = useState<CardData[]>([]);
   const [confirmClear, setConfirmClear] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+
+  const currentUser = auth.currentUser;
 
   const refreshList = async () => {
-    const list = await getAllCardsFromIDB();
-    setCards(list);
+    // 1. Fetch from local IndexedDB
+    let localCards = await getAllCardsFromIDB();
+
+    // 2. If user is logged in with Firebase, sync with Firestore!
+    if (currentUser?.uid) {
+      setIsCloudSyncing(true);
+      try {
+        const cloudCards = await getCardsFromFirestore(currentUser.uid);
+        // Merge cloud cards into local IndexedDB
+        for (const cc of cloudCards) {
+          await saveCardToIDB(cc);
+        }
+        localCards = await getAllCardsFromIDB();
+      } catch (err) {
+        console.warn('Cloud sync error:', err);
+      } finally {
+        setIsCloudSyncing(false);
+      }
+    }
+
+    setCards(localCards);
   };
 
   useEffect(() => {
     if (isOpen) {
       refreshList();
     }
-  }, [isOpen]);
+  }, [isOpen, currentUser]);
 
   if (!isOpen) return null;
 
   const handleSaveCurrent = async () => {
+    // Save to local IndexedDB
     await saveCardToIDB(currentCard);
+
+    // If signed in, also sync to Firestore
+    if (currentUser?.uid) {
+      try {
+        await saveCardToFirestore(currentUser.uid, currentCard);
+      } catch (err) {
+        console.warn('Firestore save error:', err);
+      }
+    }
+
     await refreshList();
     setMessage(
-      language === 'hi'
+      currentUser
+        ? language === 'hi'
+          ? 'कार्ड IndexedDB और Cloud Firestore दोनों में सहेज लिया गया!'
+          : 'Card saved to IndexedDB and Cloud Firestore!'
+        : language === 'hi'
         ? 'वर्तमान कार्ड आपके ब्राउज़र में सुरक्षित सहेज लिया गया!'
         : 'Current card saved securely in browser storage!'
     );
@@ -73,6 +114,15 @@ export const MyCardsDrawer: React.FC<MyCardsDrawerProps> = ({
       updatedAt: Date.now(),
     };
     await saveCardToIDB(duplicated);
+
+    if (currentUser?.uid) {
+      try {
+        await saveCardToFirestore(currentUser.uid, duplicated);
+      } catch (err) {
+        console.warn(err);
+      }
+    }
+
     await refreshList();
     setMessage(language === 'hi' ? 'कार्ड की प्रतिलिपि बना ली गई!' : 'Card duplicated successfully!');
     setTimeout(() => setMessage(null), 3000);
@@ -80,6 +130,13 @@ export const MyCardsDrawer: React.FC<MyCardsDrawerProps> = ({
 
   const handleDelete = async (id: string) => {
     await deleteCardFromIDB(id);
+    if (currentUser?.uid) {
+      try {
+        await deleteCardFromFirestore(currentUser.uid, id);
+      } catch (err) {
+        console.warn(err);
+      }
+    }
     await refreshList();
   };
 
@@ -105,19 +162,30 @@ export const MyCardsDrawer: React.FC<MyCardsDrawerProps> = ({
               <FolderArchive className="w-5 h-5 text-blue-300" />
             </div>
             <div>
-              <h3 className="font-bold text-lg">
-                {language === 'hi' ? 'सहेजे गए कार्ड (My Cards)' : 'My Saved Cards'}
-              </h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-lg">
+                  {language === 'hi' ? 'सहेजे गए कार्ड (My Cards)' : 'My Saved Cards'}
+                </h3>
+                {currentUser && (
+                  <span className="flex items-center gap-1 text-[10px] bg-emerald-500/30 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-400/30 font-bold">
+                    <Cloud className="w-3 h-3" />
+                    Cloud Active
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-blue-200">
-                {language === 'hi'
-                  ? 'स्थानीय ब्राउज़र IndexedDB स्टोरेज (गोपनीय और ऑफलाइन)'
-                  : 'Local browser IndexedDB (Private & Offline)'}
+                {currentUser
+                  ? `Google User: ${currentUser.email} • Cloud Firestore + IndexedDB`
+                  : language === 'hi'
+                  ? 'लोकल ब्राउज़र IndexedDB (Google लॉगिन करके क्लाउड पर भी सहेजें)'
+                  : 'Local IndexedDB (Sign in with Google for Cloud Sync)'}
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 text-white/70 hover:text-white rounded-xl hover:bg-white/10 transition"
+            className="p-2 text-white/70 hover:text-white rounded-xl hover:bg-white/10 transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -126,8 +194,9 @@ export const MyCardsDrawer: React.FC<MyCardsDrawerProps> = ({
         {/* Action Toolbar */}
         <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 shrink-0">
           <button
+            type="button"
             onClick={handleSaveCurrent}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-xs transition"
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-xs transition cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>{language === 'hi' ? 'वर्तमान कार्ड सहेजें' : 'Save Current Card'}</span>
@@ -137,26 +206,29 @@ export const MyCardsDrawer: React.FC<MyCardsDrawerProps> = ({
             <div>
               {confirmClear ? (
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-rose-600 font-semibold">Sure to delete all?</span>
+                  <span className="text-xs text-rose-600 font-semibold">Delete all?</span>
                   <button
+                    type="button"
                     onClick={handleClearAll}
-                    className="px-2.5 py-1.5 bg-rose-600 text-white rounded-lg text-xs font-bold"
+                    className="px-2.5 py-1.5 bg-rose-600 text-white rounded-lg text-xs font-bold cursor-pointer"
                   >
                     Yes, Clear All
                   </button>
                   <button
+                    type="button"
                     onClick={() => setConfirmClear(false)}
-                    className="px-2.5 py-1.5 bg-slate-200 text-slate-700 rounded-lg text-xs"
+                    className="px-2.5 py-1.5 bg-slate-200 text-slate-700 rounded-lg text-xs cursor-pointer"
                   >
                     Cancel
                   </button>
                 </div>
               ) : (
                 <button
+                  type="button"
                   onClick={() => setConfirmClear(true)}
-                  className="px-3 py-1.5 text-xs text-rose-600 hover:text-rose-800 font-medium hover:bg-rose-50 rounded-lg transition"
+                  className="px-3 py-1.5 text-xs text-rose-600 hover:text-rose-800 font-medium hover:bg-rose-50 rounded-lg transition cursor-pointer"
                 >
-                  {language === 'hi' ? 'सभी कार्ड साफ़ करें' : 'Clear All Data'}
+                  {language === 'hi' ? 'सभी कार्ड साफ़ करें' : 'Clear All'}
                 </button>
               )}
             </div>
@@ -164,8 +236,9 @@ export const MyCardsDrawer: React.FC<MyCardsDrawerProps> = ({
         </div>
 
         {message && (
-          <div className="m-4 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs">
-            {message}
+          <div className="m-4 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{message}</span>
           </div>
         )}
 
@@ -217,7 +290,7 @@ export const MyCardsDrawer: React.FC<MyCardsDrawerProps> = ({
                         onLoadCard(c);
                         onClose();
                       }}
-                      className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-semibold flex items-center gap-1 transition"
+                      className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-semibold flex items-center gap-1 transition cursor-pointer"
                     >
                       <FolderOpen className="w-3.5 h-3.5" />
                       <span>{language === 'hi' ? 'खोलें' : 'Open'}</span>
@@ -227,7 +300,7 @@ export const MyCardsDrawer: React.FC<MyCardsDrawerProps> = ({
                       <button
                         type="button"
                         onClick={() => handleDuplicate(c)}
-                        className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
+                        className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition cursor-pointer"
                         title="Duplicate"
                       >
                         <Copy className="w-3.5 h-3.5" />
@@ -235,7 +308,7 @@ export const MyCardsDrawer: React.FC<MyCardsDrawerProps> = ({
                       <button
                         type="button"
                         onClick={() => handleDelete(c.id)}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
                         title="Delete"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -247,11 +320,13 @@ export const MyCardsDrawer: React.FC<MyCardsDrawerProps> = ({
             </div>
           )}
 
-          {/* Privacy Note */}
+          {/* Privacy & Cloud info */}
           <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] text-slate-500 flex items-start gap-2">
             <AlertCircle className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
             <p>
-              <strong>Local Storage Disclaimer:</strong> All card data is stored inside your browser’s IndexedDB. If you clear site cache, cookies, or use incognito mode, local data may be removed. Data is never transmitted to any external server.
+              {currentUser
+                ? 'Your cards are safely backed up in Firebase Cloud Firestore under your Google account and synchronized with local IndexedDB.'
+                : 'Guest mode: Cards are stored in your local browser IndexedDB. Sign in with Google to sync your cards safely to Cloud Firestore across all devices!'}
             </p>
           </div>
         </div>
@@ -259,8 +334,9 @@ export const MyCardsDrawer: React.FC<MyCardsDrawerProps> = ({
         {/* Footer */}
         <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end shrink-0">
           <button
+            type="button"
             onClick={onClose}
-            className="px-4 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-white text-xs font-semibold"
+            className="px-4 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-white text-xs font-semibold cursor-pointer"
           >
             {language === 'hi' ? 'बंद करें' : 'Close'}
           </button>

@@ -1,0 +1,74 @@
+{
+  "entities": {
+    "Card": {
+      "title": "EmployeeCard",
+      "description": "An employee ID card record saved by an authenticated user.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique card identifier"
+        },
+        "fullName": {
+          "type": "string",
+          "description": "Employee Full Name"
+        },
+        "employeeId": {
+          "type": "string",
+          "description": "Employee ID Number"
+        },
+        "designation": {
+          "type": "string",
+          "description": "Designation or Title"
+        },
+        "organizationName": {
+          "type": "string",
+          "description": "Company or Organization"
+        },
+        "department": {
+          "type": "string",
+          "description": "Department name"
+        },
+        "templateId": {
+          "type": "string",
+          "description": "Template design identifier"
+        },
+        "orientation": {
+          "type": "string",
+          "description": "Card orientation portrait or landscape"
+        },
+        "themeColor": {
+          "type": "string",
+          "description": "Primary theme color hex"
+        },
+        "accentColor": {
+          "type": "string",
+          "description": "Secondary accent color hex"
+        },
+        "verificationId": {
+          "type": "string",
+          "description": "Cryptographic verification record code"
+        },
+        "verificationStatus": {
+          "type": "string",
+          "description": "Card record status active, expired, or revoked"
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Creation timestamp"
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Last updated timestamp"
+        }
+      },
+      "required": ["id", "fullName", "employeeId", "organizationName"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/cards/{cardId}": {
+      "schema": { "$ref": "Card" },
+      "description": "User's private saved employee ID cards"
+    }
+  }
+}

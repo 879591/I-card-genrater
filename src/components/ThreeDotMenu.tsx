@@ -9,12 +9,11 @@ import {
   ShieldCheck,
   HelpCircle,
   Lock,
-  Smartphone,
+  Bot,
   Globe,
-  User,
-  ExternalLink,
   ChevronRight,
   Sparkles,
+  Cloud,
 } from 'lucide-react';
 
 interface ThreeDotMenuProps {
@@ -29,7 +28,7 @@ interface ThreeDotMenuProps {
   onOpenHowItWorks: () => void;
   onOpenPrivacy: () => void;
   onOpenDeveloper: () => void;
-  onInstallPWA?: () => void;
+  onOpenChatbot: () => void;
   savedCardsCount: number;
 }
 
@@ -45,6 +44,7 @@ export const ThreeDotMenu: React.FC<ThreeDotMenuProps> = ({
   onOpenHowItWorks,
   onOpenPrivacy,
   onOpenDeveloper,
+  onOpenChatbot,
   savedCardsCount,
 }) => {
   const [showTemplatesSubmenu, setShowTemplatesSubmenu] = useState(false);
@@ -108,6 +108,36 @@ export const ThreeDotMenu: React.FC<ThreeDotMenuProps> = ({
             </div>
           </div>
 
+          {/* Gemini AI Assistant Button */}
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              onOpenChatbot();
+            }}
+            className="w-full p-3.5 rounded-2xl bg-gradient-to-r from-purple-900 via-indigo-900 to-blue-900 text-white flex items-center justify-between text-left shadow-md transition hover:scale-[1.01] cursor-pointer"
+          >
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-white/20 rounded-xl text-amber-300">
+                <Bot className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-extrabold text-xs text-white flex items-center gap-1.5">
+                  <span>5tar Card AI Assistant</span>
+                  <span className="text-[9px] bg-emerald-500/30 text-emerald-300 px-1.5 py-0.2 rounded">
+                    Gemini 3.8
+                  </span>
+                </h4>
+                <p className="text-[10px] text-blue-200">
+                  {language === 'hi'
+                    ? 'Google सर्च ग्राउंडिंग के साथ स्मार्ट सहायता'
+                    : 'Smart suggestions & Google Search grounding'}
+                </p>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-white/70" />
+          </button>
+
           {/* Core Feature Menus */}
           <div className="space-y-1.5">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2 block">
@@ -151,7 +181,7 @@ export const ThreeDotMenu: React.FC<ThreeDotMenuProps> = ({
                         onSelectTemplate(tmpl.id, TEMPLATE_PRESETS[tmpl.id]);
                         onClose();
                       }}
-                      className={`p-2 rounded-xl text-left text-xs transition border flex items-center gap-2 ${
+                      className={`p-2 rounded-xl text-left text-xs transition border flex items-center gap-2 cursor-pointer ${
                         currentTemplateId === tmpl.id
                           ? 'border-blue-600 bg-blue-50/80 font-bold text-blue-900'
                           : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
@@ -187,8 +217,8 @@ export const ThreeDotMenu: React.FC<ThreeDotMenuProps> = ({
                   </h4>
                   <p className="text-[10px] text-slate-500">
                     {language === 'hi'
-                      ? 'लोकल ब्राउज़र IndexedDB मेमोरी'
-                      : 'Private browser IndexedDB storage'}
+                      ? 'लोकल IndexedDB एवं क्लाउड बैकअप'
+                      : 'Local IndexedDB & Cloud Sync'}
                   </p>
                 </div>
               </div>
@@ -269,7 +299,7 @@ export const ThreeDotMenu: React.FC<ThreeDotMenuProps> = ({
                     {language === 'hi' ? 'गोपनीयता और डेटा सुरक्षा' : 'Privacy & Security'}
                   </h4>
                   <p className="text-[10px] text-slate-500">
-                    100% Client-side • Zero server upload
+                    Client-side processing • Firebase Auth & Firestore
                   </p>
                 </div>
               </div>

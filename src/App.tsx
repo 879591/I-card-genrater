@@ -3,12 +3,17 @@ import { CardData, TemplateId } from './types/card';
 import { DEFAULT_CARD, TEMPLATE_PRESETS } from './utils/demoData';
 import { getAllCardsFromIDB, saveCardToIDB } from './utils/idb';
 import { generateCardQRCode } from './utils/qr';
-import { exportCardAsImage, exportCardAsPdf, triggerCardPrint, getSafeExportFilename } from './utils/export';
+import { getSafeExportFilename, triggerCardPrint } from './utils/export';
+import {
+  drawCardFrontToCanvas,
+  drawCardBackToCanvas,
+  downloadCanvasAsFile,
+  generateDualSidedCardPdf,
+} from './utils/nativeCanvasExport';
+import { auth, saveCardToFirestore, User } from './lib/firebase';
 import confetti from 'canvas-confetti';
 import { Navbar } from './components/Navbar';
 import { CardPreview } from './components/CardPreview';
-import { CardFront } from './components/CardTemplates/CardFront';
-import { CardBack } from './components/CardTemplates/CardBack';
 import { CardForm } from './components/CardForm';
 import { ThreeDotMenu } from './components/ThreeDotMenu';
 import { DeveloperSection } from './components/DeveloperSection';
@@ -16,6 +21,8 @@ import { Footer } from './components/Footer';
 import { MyCardsDrawer } from './components/MyCardsDrawer';
 import { VerificationModal } from './components/VerificationModal';
 import { InfoModal } from './components/InfoModals';
+import { ImageDownloadModal } from './components/ImageDownloadModal';
+import { GeminiChatbot } from './components/GeminiChatbot';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { TEMPLATES } from './components/TemplatesGallery';
 import {
@@ -30,29 +37,33 @@ import {
   Layers,
   Bookmark,
   Share2,
+  Bot,
+  Cloud,
 } from 'lucide-react';
 
 export default function App() {
-  const [language, setLanguage] = useState<'en' | 'hi'>('hi'); // Default Hindi friendly as requested
+  const [language, setLanguage] = useState<'en' | 'hi'>('hi');
   const [card, setCard] = useState<CardData>(DEFAULT_CARD);
   const [activeSide, setActiveSide] = useState<'front' | 'back' | 'both'>('front');
   const [qrCodeUrl, setQrCodeUrl] = useState<string>('');
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   // Modals & Drawers
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isMyCardsOpen, setIsMyCardsOpen] = useState(false);
   const [isVerificationOpen, setIsVerificationOpen] = useState(false);
+  const [isChatbotOpen, setIsChatbotOpen] = useState(false);
   const [infoModalType, setInfoModalType] = useState<'how-it-works' | 'privacy' | null>(null);
+
+  // Gallery preview modal for mobile devices
+  const [previewModalImg, setPreviewModalImg] = useState<string | null>(null);
+  const [previewModalFilename, setPreviewModalFilename] = useState<string>('');
 
   // Statuses
   const [savedCardsCount, setSavedCardsCount] = useState(0);
   const [downloadingAction, setDownloadingAction] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastType, setToastType] = useState<'success' | 'error'>('success');
-
-  // Dedicated offscreen pristine refs for html2canvas export
-  const exportFrontRef = useRef<HTMLDivElement>(null);
-  const exportBackRef = useRef<HTMLDivElement>(null);
 
   // Generate QR code whenever relevant fields change
   useEffect(() => {
@@ -93,7 +104,7 @@ export default function App() {
 
   useEffect(() => {
     updateSavedCount();
-  }, [isMyCardsOpen]);
+  }, [isMyCardsOpen, currentUser]);
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToastMessage(msg);
@@ -113,29 +124,36 @@ export default function App() {
     }
   };
 
-  // 1-Click Instant Download Handlers
+  // 1-Click Native Instant Download Handlers (100% Reliable!)
   const handleDownloadFrontImage = async (format: 'png' | 'jpeg') => {
-    if (!exportFrontRef.current) {
-      showToast(language === 'hi' ? 'कार्ड तैयार नहीं है, कृपया प्रतीक्षा करें' : 'Card not ready for export', 'error');
-      return;
-    }
     setDownloadingAction(`front-${format}`);
     try {
+      const canvas = await drawCardFrontToCanvas(card, qrCodeUrl);
       const filename = getSafeExportFilename(
         `${card.fullName || 'Employee'}-Front`,
         format === 'jpeg' ? 'jpg' : 'png'
       );
-      await exportCardAsImage(exportFrontRef.current, format, filename);
+
+      // Trigger instant download
+      await downloadCanvasAsFile(canvas, filename, format);
+
+      // Also open modal so mobile user can view & save to gallery/photos directly
+      const dataUrl = canvas.toDataURL(format === 'jpeg' ? 'image/jpeg' : 'image/png');
+      setPreviewModalImg(dataUrl);
+      setPreviewModalFilename(filename);
+
       showToast(
         language === 'hi'
-          ? `✓ आगे का भाग (${filename}) डाउनलोड हो गया!`
+          ? `✓ आगे का भाग (${filename}) तैयार व डाउनलोड हो गया!`
           : `✓ Front side (${filename}) downloaded successfully!`
       );
       triggerConfetti();
     } catch (err) {
-      console.error(err);
+      console.error('Download Front Image Error:', err);
       showToast(
-        language === 'hi' ? 'डाउनलोड करने में त्रुटि आई। कृपया पुनः प्रयास करें।' : 'Download failed. Please try again.',
+        language === 'hi'
+          ? 'डाउनलोड में समस्या आई, कृपया दोबारा क्लिक करें।'
+          : 'Download failed. Please try again.',
         'error'
       );
     } finally {
@@ -144,27 +162,34 @@ export default function App() {
   };
 
   const handleDownloadBackImage = async (format: 'png' | 'jpeg') => {
-    if (!exportBackRef.current) {
-      showToast(language === 'hi' ? 'कार्ड तैयार नहीं है, कृपया प्रतीक्षा करें' : 'Card not ready for export', 'error');
-      return;
-    }
     setDownloadingAction(`back-${format}`);
     try {
+      const canvas = await drawCardBackToCanvas(card, qrCodeUrl);
       const filename = getSafeExportFilename(
         `${card.fullName || 'Employee'}-Back`,
         format === 'jpeg' ? 'jpg' : 'png'
       );
-      await exportCardAsImage(exportBackRef.current, format, filename);
+
+      // Trigger instant download
+      await downloadCanvasAsFile(canvas, filename, format);
+
+      // Also open modal so mobile user can view & save to gallery/photos directly
+      const dataUrl = canvas.toDataURL(format === 'jpeg' ? 'image/jpeg' : 'image/png');
+      setPreviewModalImg(dataUrl);
+      setPreviewModalFilename(filename);
+
       showToast(
         language === 'hi'
-          ? `✓ पीछे का भाग (${filename}) डाउनलोड हो गया!`
+          ? `✓ पीछे का भाग (${filename}) तैयार व डाउनलोड हो गया!`
           : `✓ Back side (${filename}) downloaded successfully!`
       );
       triggerConfetti();
     } catch (err) {
-      console.error(err);
+      console.error('Download Back Image Error:', err);
       showToast(
-        language === 'hi' ? 'डाउनलोड करने में त्रुटि आई। कृपया पुनः प्रयास करें।' : 'Download failed. Please try again.',
+        language === 'hi'
+          ? 'डाउनलोड में समस्या आई, कृपया दोबारा क्लिक करें।'
+          : 'Download failed. Please try again.',
         'error'
       );
     } finally {
@@ -173,29 +198,28 @@ export default function App() {
   };
 
   const handleDownloadPdf = async () => {
-    if (!exportFrontRef.current || !exportBackRef.current) {
-      showToast(language === 'hi' ? 'कार्ड रेंडर नहीं हो सका' : 'Card elements not ready', 'error');
-      return;
-    }
     setDownloadingAction('pdf');
     try {
+      const [frontCanvas, backCanvas] = await Promise.all([
+        drawCardFrontToCanvas(card, qrCodeUrl),
+        drawCardBackToCanvas(card, qrCodeUrl),
+      ]);
+
       const filename = getSafeExportFilename(card.fullName || 'Employee', 'pdf');
-      await exportCardAsPdf(
-        exportFrontRef.current,
-        exportBackRef.current,
-        card.orientation,
-        filename
-      );
+      await generateDualSidedCardPdf(frontCanvas, backCanvas, card.orientation, filename);
+
       showToast(
         language === 'hi'
-          ? `✓ प्रिंट-रेडी PDF (${filename}) डाउनलोड हो गया!`
-          : `✓ Print-ready PDF (${filename}) downloaded successfully!`
+          ? `✓ पूरा ID Card (${filename}) PDF में डाउनलोड हो गया!`
+          : `✓ Dual-sided PDF (${filename}) downloaded successfully!`
       );
       triggerConfetti();
     } catch (err) {
-      console.error(err);
+      console.error('Download PDF Error:', err);
       showToast(
-        language === 'hi' ? 'PDF डाउनलोड नहीं हो सका, पुनः प्रयास करें।' : 'PDF generation failed.',
+        language === 'hi'
+          ? 'PDF डाउनलोड नहीं हो सका, कृपया पुनः प्रयास करें।'
+          : 'PDF download failed. Please try again.',
         'error'
       );
     } finally {
@@ -210,9 +234,16 @@ export default function App() {
   const handleSaveToMyCards = async () => {
     try {
       await saveCardToIDB(card);
+      if (currentUser?.uid) {
+        await saveCardToFirestore(currentUser.uid, card);
+      }
       await updateSavedCount();
       showToast(
-        language === 'hi'
+        currentUser
+          ? language === 'hi'
+            ? 'कार्ड IndexedDB और Cloud Firestore में सहेजा गया!'
+            : 'Card saved to IndexedDB & Cloud Firestore!'
+          : language === 'hi'
           ? 'कार्ड My Cards में सुरक्षित सहेज लिया गया!'
           : 'Card saved to My Cards successfully!'
       );
@@ -282,6 +313,8 @@ export default function App() {
         setLanguage={setLanguage}
         onOpenMenu={() => setIsMenuOpen(true)}
         onOpenMyCards={() => setIsMyCardsOpen(true)}
+        onOpenChatbot={() => setIsChatbotOpen(true)}
+        onAuthChange={setCurrentUser}
         savedCardsCount={savedCardsCount}
       />
 
@@ -303,7 +336,7 @@ export default function App() {
         </div>
       )}
 
-      {/* COMPACT HERO BAR (No long scrolling!) */}
+      {/* COMPACT HERO BAR */}
       <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white py-3 px-4 shadow-sm">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2">
@@ -312,16 +345,27 @@ export default function App() {
             </span>
             <span className="font-bold">
               {language === 'hi'
-                ? 'मिनटों में बनाएँ प्रोफेशनल Employee ID Card'
-                : 'Create Professional Employee ID Cards in Minutes'}
+                ? 'मिनटों में बनाएँ और डाउनलोड करें Professional Employee ID Card'
+                : 'Create & Download Professional Employee ID Cards in Minutes'}
             </span>
-            <span className="hidden md:inline text-blue-200">
-              • {language === 'hi' ? 'मुफ्त, आसान और मोबाइल-फ्रेंडली' : '100% Free & Mobile-Friendly'}
-            </span>
+            {currentUser && (
+              <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-emerald-300 font-bold bg-emerald-500/20 px-2 py-0.5 rounded-full border border-emerald-400/30">
+                <Cloud className="w-3 h-3" />
+                Firestore Synced
+              </span>
+            )}
           </div>
 
           {/* Quick Shortcuts */}
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsChatbotOpen(true)}
+              className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-[11px] font-bold flex items-center gap-1 shadow-xs transition hover:brightness-110 cursor-pointer"
+            >
+              <Bot className="w-3.5 h-3.5 text-amber-300" />
+              <span>{language === 'hi' ? 'एआई सहायक' : 'AI Assistant'}</span>
+            </button>
             <button
               type="button"
               onClick={() => setIsMenuOpen(true)}
@@ -389,11 +433,11 @@ export default function App() {
                 <div className="flex items-center gap-2">
                   <Download className="w-4 h-4 text-blue-600" />
                   <h3 className="font-extrabold text-sm text-slate-900">
-                    {language === 'hi' ? 'कार्ड डाउनलोड करें (1-क्लिक)' : 'Direct Instant Downloads'}
+                    {language === 'hi' ? 'सीधे गैलरी / फोन में डाउनलोड करें' : 'Direct Gallery & File Downloads'}
                   </h3>
                 </div>
                 <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                  300 DPI Ready
+                  300 DPI Clear
                 </span>
               </div>
 
@@ -404,15 +448,15 @@ export default function App() {
                   type="button"
                   disabled={downloadingAction !== null}
                   onClick={() => handleDownloadFrontImage('png')}
-                  className="p-2.5 bg-blue-50 hover:bg-blue-100 text-blue-800 rounded-xl font-bold border border-blue-200 flex items-center justify-between transition cursor-pointer disabled:opacity-50"
-                  title="Download Front side as PNG"
+                  className="p-3 bg-blue-50 hover:bg-blue-100 text-blue-800 rounded-2xl font-bold border border-blue-200 flex items-center justify-between transition cursor-pointer disabled:opacity-50 shadow-xs"
+                  title="Download Front side as PNG to gallery"
                 >
                   <div className="flex items-center gap-1.5">
-                    <ImageIcon className="w-3.5 h-3.5 text-blue-600" />
-                    <span>{language === 'hi' ? 'आगे का भाग' : 'Front PNG'}</span>
+                    <ImageIcon className="w-4 h-4 text-blue-600" />
+                    <span>{language === 'hi' ? 'आगे का भाग (PNG)' : 'Front (PNG)'}</span>
                   </div>
                   {downloadingAction === 'front-png' ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
                   ) : (
                     <span className="text-[9px] bg-white px-1.5 py-0.5 rounded text-blue-700 font-mono">
                       PNG
@@ -425,15 +469,15 @@ export default function App() {
                   type="button"
                   disabled={downloadingAction !== null}
                   onClick={() => handleDownloadBackImage('png')}
-                  className="p-2.5 bg-blue-50 hover:bg-blue-100 text-blue-800 rounded-xl font-bold border border-blue-200 flex items-center justify-between transition cursor-pointer disabled:opacity-50"
-                  title="Download Back side as PNG"
+                  className="p-3 bg-blue-50 hover:bg-blue-100 text-blue-800 rounded-2xl font-bold border border-blue-200 flex items-center justify-between transition cursor-pointer disabled:opacity-50 shadow-xs"
+                  title="Download Back side as PNG to gallery"
                 >
                   <div className="flex items-center gap-1.5">
-                    <ImageIcon className="w-3.5 h-3.5 text-blue-600" />
-                    <span>{language === 'hi' ? 'पीछे का भाग' : 'Back PNG'}</span>
+                    <ImageIcon className="w-4 h-4 text-blue-600" />
+                    <span>{language === 'hi' ? 'पीछे का भाग (PNG)' : 'Back (PNG)'}</span>
                   </div>
                   {downloadingAction === 'back-png' ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
                   ) : (
                     <span className="text-[9px] bg-white px-1.5 py-0.5 rounded text-blue-700 font-mono">
                       PNG
@@ -446,11 +490,11 @@ export default function App() {
                   type="button"
                   disabled={downloadingAction !== null}
                   onClick={handleDownloadPdf}
-                  className="col-span-2 p-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-2xl font-black shadow-md flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-50"
+                  className="col-span-2 p-3.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 text-white rounded-2xl font-extrabold shadow-md flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-50 text-xs sm:text-sm"
                   title="Download Front and Back in high-resolution PDF"
                 >
                   {downloadingAction === 'pdf' ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <Loader2 className="w-4 h-4 animate-spin text-white" />
                   ) : (
                     <FileText className="w-4 h-4 text-amber-300" />
                   )}
@@ -504,6 +548,19 @@ export default function App() {
       {/* COMPACT FOOTER */}
       <Footer language={language} />
 
+      {/* FLOATING AI ASSISTANT CHAT TRIGGER BUTTON */}
+      <button
+        type="button"
+        onClick={() => setIsChatbotOpen(true)}
+        className="fixed bottom-6 right-6 z-40 p-3.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-2xl shadow-xl shadow-purple-500/30 flex items-center gap-2 font-bold text-xs transition hover:scale-105 cursor-pointer"
+        title="Open 5tar Gemini AI Assistant"
+      >
+        <Bot className="w-5 h-5 text-amber-300" />
+        <span className="hidden sm:inline">
+          {language === 'hi' ? 'एआई सहायक (Gemini)' : 'AI Assistant'}
+        </span>
+      </button>
+
       {/* THREE-DOT (⋮) SLIDE-OUT MENU DRAWER */}
       <ThreeDotMenu
         isOpen={isMenuOpen}
@@ -520,10 +577,11 @@ export default function App() {
           const dev = document.getElementById('developer-section');
           dev?.scrollIntoView({ behavior: 'smooth' });
         }}
+        onOpenChatbot={() => setIsChatbotOpen(true)}
         savedCardsCount={savedCardsCount}
       />
 
-      {/* MY SAVED CARDS MODAL (INDEXEDDB) */}
+      {/* MY SAVED CARDS MODAL (INDEXEDDB + CLOUD FIRESTORE) */}
       <MyCardsDrawer
         isOpen={isMyCardsOpen}
         onClose={() => setIsMyCardsOpen(false)}
@@ -555,27 +613,21 @@ export default function App() {
         language={language}
       />
 
-      {/* OFF-SCREEN PRISTINE CAPTURE ELEMENTS (ZERO 3D TRANSFORMS, 100% RELIABLE HTML2CANVAS CAPTURE) */}
-      <div
-        aria-hidden="true"
-        style={{
-          position: 'fixed',
-          left: '-99999px',
-          top: '0',
-          zIndex: -100,
-          pointerEvents: 'none',
-          opacity: 1,
-          display: 'flex',
-          gap: '20px',
-        }}
-      >
-        <div ref={exportFrontRef}>
-          <CardFront card={card} qrCodeUrl={qrCodeUrl} />
-        </div>
-        <div ref={exportBackRef}>
-          <CardBack card={card} qrCodeUrl={qrCodeUrl} />
-        </div>
-      </div>
+      {/* IMAGE DOWNLOAD & MOBILE GALLERY SAVE MODAL */}
+      <ImageDownloadModal
+        isOpen={previewModalImg !== null}
+        onClose={() => setPreviewModalImg(null)}
+        imageUrl={previewModalImg}
+        filename={previewModalFilename}
+        language={language}
+      />
+
+      {/* GEMINI CHATBOT WITH GOOGLE SEARCH GROUNDING */}
+      <GeminiChatbot
+        isOpen={isChatbotOpen}
+        onClose={() => setIsChatbotOpen(false)}
+        language={language}
+      />
     </div>
   );
 }
